@@ -1,5 +1,5 @@
 {
-   "abstract" : "It's new $module",
+   "abstract" : "multipart/form-data parser library",
    "author" : [
       "tokuhirom <tokuhirom@gmail.com>"
    ],
@@ -43,11 +43,16 @@
       },
       "runtime" : {
          "requires" : {
+            "Carp" : "0",
+            "File::Spec" : "0",
+            "File::Temp" : "0",
             "perl" : "5.008005"
          }
       },
       "test" : {
          "requires" : {
+            "Hash::MultiValue" : "0",
+            "Test::Deep" : "0",
             "Test::More" : "0.98"
          }
       }

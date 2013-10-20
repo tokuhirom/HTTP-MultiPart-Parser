@@ -7,7 +7,6 @@ our $VERSION = "0.01";
 
 use File::Spec ();
 use File::Temp ();
-use Hash::MultiValue ();
 use Carp ();
 
 use constant {
@@ -35,15 +34,13 @@ sub new {
     bless {
         boundary => $1,
         state    => STATE_PREAMBLE,
-        params   => Hash::MultiValue->new(),
-        files    => Hash::MultiValue->new(),
         tmpdir   => exists($args{tmpdir}) ? $args{tmpdir} : File::Spec->tmpdir,
+        parts    => [],
         length   => 0, # Does it needed?
     }, $class;
 }
 
-sub params { $_[0]->{params} }
-sub files  { $_[0]->{files} }
+sub parts { $_[0]->{parts} }
 
 sub add {
     my $self = shift;
@@ -205,7 +202,7 @@ sub handler {
 
             if ( $filename ne "" ) {
                 my $basename = (File::Spec->splitpath($filename))[2];
-                my $suffix = $basename =~ /[^.]+(\.[^\\\/]+)$/ ? $1 : q{};
+                my $suffix = $basename =~ /(\.[a-zA-Z0-9_-]+)\z/ ? $1 : q{};
 
                 my $fh = File::Temp->new(
                     UNLINK => 1,
@@ -230,19 +227,26 @@ sub handler {
 
                 delete @{$part}{qw[ data fh ]};
 
-                $self->files->add( $part->{name}, $part );
+                push @{ $self->{parts} },
+                  +{
+                    name     => $part->{name},
+                    size     => $part->{size},
+                    headers  => $part->{headers},
+                    filename => $part->{filename},
+                    tempname => $part->{tempname},
+                  };
+                $part;
             }
         }
         else {
-            $self->params->add( $part->{name}, $part->{data} );
+            push @{$self->{parts}}, +{
+                name => $part->{name},
+                data => $part->{data},
+            };
         }
     }
 }
 
-# Note.
-#
-# I dropped `param_order` feature from this module. Because it's useless.
-# But if you want to add this feature, I can apply your patch.
 
 1;
 __END__
@@ -262,8 +266,7 @@ HTTP::MultiPart::Parser - multipart/form-data parser library
         $parser->add($buffer);
     }
 
-    $parser->params();  # Parameters
-    $parser->files();   # Uploaded files
+    $parser->parts();  # Parts.
 
 =head1 DESCRIPTION
 
@@ -271,15 +274,33 @@ HTTP::MultiPart::Parser is low level `multipart/form-data` parser library.
 
 =head1 MOTIVATION
 
-HTTP::Body is the great `multipart/form-data` parsing library. But I need more crushed, tiny library.
+HTTP::Body::MultiPart is the great `multipart/form-data` parsing library. But I need more crushed, tiny library.
 
 =head1 METHODS
 
 =over 4
 
-=item C<< my $parser = HTTP::MultiPart::Parser->new() >>
+=item C<< my $parser = HTTP::MultiPart::Parser->new(%args) >>
 
 Create new instance.
+
+Arguments are:
+
+=over 4
+
+=item content_type: Str
+
+This is a Content-Type header in main header.
+
+Thie argument is the mandatory parameter.
+
+=item tmpdir: Str
+
+The directory to save temporary file.
+
+Default: C< File::Temp->tmpdir >.
+
+=back
 
 =item C<< $parser->add($buffer:Str) >>
 
@@ -287,17 +308,47 @@ Add contents for parsing buffer. HTTP::MultiPart parses contents incrementally.
 
 =item C<< $parser->parts : ArrayRef >>
 
-=item C<< $parser->params : Hash::MultiValue >>
+It returns C< ArrayRef[HashRef] >.
 
-Parameters. The type is Hash::MultiValue.
+Normal type part contains following keys:
 
-Key is a field name, value is a string.
+=over 4
 
-=item C<< $parser->files :Hash::MultiValue >>
+=item name
 
-Uploaded files. The type is Hash::MultiValue.
+The name of the part.
 
-Key is a field name, value is a HashRef.
+=item data
+
+Body of the part. If the hashref contains C<filename> key, this key does not exist.
+
+=back
+
+File type part contains following keys:
+
+=over 4
+
+=item name
+
+The name of the part.
+
+=item headers
+
+Headers for this part in HashRef. It's I<mixed>. It means some values are Str, some values are ArrayRef[Str].
+
+=item filename
+
+File name specified by C<Content-Disposition> header.
+
+=item tempname
+
+File name for the temporary file, that contains the body.
+
+=item size
+
+Size of the part.
+
+=back
 
 =back
 
@@ -308,7 +359,7 @@ Key is a field name, value is a HashRef.
 =item DOES THIS MODULE CARE THE CHUNKED DATA?
 
 No. If you want to support chunked data.
-But you can use L<HTTP::Chunked> for handling chunked data.
+But you can use L<HTTP::Body::Reader> for handling chunked data.
 
 =back
 

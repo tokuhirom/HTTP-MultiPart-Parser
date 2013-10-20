@@ -1,1 +1,2 @@
 name = "HTTP-MultiPart-Parser"
+badges = ["travis"]

@@ -3,11 +3,14 @@
 use strict;
 use warnings;
 
+# This test case is taken from HTTP::Body... Thanks!
+
 use FindBin;
 use lib "$FindBin::Bin/lib";
 
 use Test::More;
 use Test::Deep;
+use Hash::MultiValue ();
 
 use Cwd;
 use HTTP::MultiPart::Parser;
@@ -33,27 +36,21 @@ for ( my $i = 1; $i <= 13; $i++ ) {
         tmpdir       => $tempdir,
     );
 
-    my $regex_tempdir = quotemeta($tempdir);
-
     binmode $content, ':raw';
 
     while ( $content->read( my $buffer, 1024 ) ) {
         $body->add($buffer);
     }
-    
-    # Save tempnames for later deletion
-    my @temps;
-    
-    for my $field ( sort keys %{ $body->files } ) {
-        note "Field: $field";
 
-        my $value = $body->files->as_hashref_mixed->{$field};
+    # Save tempnames for later deletion check
+    my @temps = map { $_->{tempname} } grep { defined $_->{tempname} } @{$body->parts};
+    for my $tempfile ( @temps ) {
+        ok starts_with($tempfile, $tempdir), "has tmpdir $tempdir";
+    }
 
-        for ( ( ref($value) eq 'ARRAY' ) ? @{$value} : $value ) {
-            like($_->{tempname}, qr{$regex_tempdir}, "has tmpdir $tempdir");
-            push @temps, $_->{tempname};
-        }
-        
+    for my $field ( sort keys %{$results->{upload}} ) {
+        my $value = $results->{upload}->{$field};
+
         # Tell Test::Deep to ignore tempname values
         if ( ref $value eq 'ARRAY' ) {
             for ( @{ $results->{upload}->{$field} } ) {
@@ -65,14 +62,26 @@ for ( my $i = 1; $i <= 13; $i++ ) {
         }
     }
 	
-    cmp_deeply( undef, $results->{body}, "$test MultiPart body" );
-    # cmp_deeply( $body->body, $results->{body}, "$test MultiPart body" );
-    cmp_deeply( $body->params->as_hashref_mixed, $results->{param}, "$test MultiPart param" );
-    # cmp_deeply( $body->param_order, $results->{param_order} ? $results->{param_order} : [], "$test MultiPart param_order" );
-    cmp_deeply( $body->files->as_hashref_mixed, $results->{upload}, "$test MultiPart upload" )
-        if $results->{upload};
-    cmp_ok( $body->{state}, 'eq', HTTP::MultiPart::Parser::STATE_DONE, "$test MultiPart state" );
-    cmp_ok( $body->{length}, '==', $headers->{'Content-Length'}, "$test MultiPart length" );
+    my $upload = Hash::MultiValue->new();
+    my $params = Hash::MultiValue->new();
+    for (@{$body->parts}) {
+        if (exists $_->{filename}) {
+            $upload->add($_->{name}, $_);
+        } else {
+            $params->add($_->{name}, $_->{data});
+        }
+    }
+    cmp_deeply( $params->as_hashref_mixed, $results->{param}, "$test MultiPart param" );
+    cmp_deeply(
+        [map { $_->{name} } grep { !$_->{tempname} } @{$body->parts}],
+        $results->{param_order} || [],
+        'MultiPart param_order'
+    );
+    if ($results->{upload}) {
+        cmp_deeply( $upload->as_hashref_mixed, $results->{upload}, "$test MultiPart upload" );
+    }
+    is( $body->{state}, HTTP::MultiPart::Parser::STATE_DONE, "$test MultiPart state" );
+    is( $body->{length}, $headers->{'Content-Length'}, "$test MultiPart length" );
     
     undef $body;
     
@@ -85,3 +94,6 @@ for ( my $i = 1; $i <= 13; $i++ ) {
 } 
 
 done_testing;
+
+sub starts_with { $_[0] =~ qr{\A$_[1]} }
+
