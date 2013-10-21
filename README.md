@@ -86,8 +86,14 @@ HTTP::Body::MultiPart is the great \`multipart/form-data\` parsing library. But 
 
 - DOES THIS MODULE CARE THE CHUNKED DATA?
 
-    No. If you want to support chunked data.
-    But you can use [HTTP::Body::Reader](http://search.cpan.org/perldoc?HTTP::Body::Reader) for handling chunked data.
+    No.
+
+    I wrote this module for PSGI server applications.
+
+    Normally, PSGI server do dechunking automatically. Your application don't need to care the chunked data.
+
+        This is rather a long issue to reply individually, but in general, dechunking HTTP request should be done on the HTTP server level (be it frontend server like nginx, or PSGI server such as Starman), and on PSGI level, psgi.input should return the decoded body (and ideally Content-Length header should point to the right value) i.e. transparent to the hosted PSGI application.
+        https://github.com/plack/Plack/issues/404
 
 # LICENSE
 
